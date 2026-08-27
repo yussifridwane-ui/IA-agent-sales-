@@ -1,8 +1,12 @@
 node_modules/
-data/
+data/*
+!data/seed/
+!data/seed/**
 *.log
 .DS_Store
-
 .env
 *.db
+!data/seed/demo.db
 *.db-*
+.vercel
+.vercel/

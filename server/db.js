@@ -1,11 +1,50 @@
 // server/db.js — base de données SQLite (node:sqlite, zéro dépendance)
 import { DatabaseSync } from "node:sqlite";
-import { mkdir } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { mkdirSync, existsSync, copyFileSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const DB_PATH = resolve(process.env.DB_PATH || "data/sales-agent.db");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(__dirname, "..");
 
-await mkdir(dirname(DB_PATH), { recursive: true });
+/**
+ * Chemin DB :
+ *  - DB_PATH si défini
+ *  - sur Vercel : /tmp (seul FS accessible en écriture)
+ *  - sinon : data/sales-agent.db local
+ * Au premier boot Vercel, on copie le seed démo (si présent) pour un compte prêt à tester.
+ */
+function resolveDbPath() {
+  if (process.env.DB_PATH) return resolve(process.env.DB_PATH);
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return "/tmp/sales-agent.db";
+  }
+  return resolve(ROOT, "data/sales-agent.db");
+}
+
+export const DB_PATH = resolveDbPath();
+
+mkdirSync(dirname(DB_PATH), { recursive: true });
+
+// Seed démo (TechStore) au premier démarrage serverless
+const seedCandidates = [
+  resolve(ROOT, "data/seed/demo.db"),
+  resolve(ROOT, "data/demo.db"),
+];
+if (!existsSync(DB_PATH)) {
+  for (const seed of seedCandidates) {
+    if (existsSync(seed)) {
+      try {
+        copyFileSync(seed, DB_PATH);
+        console.log(`📦 DB initialisée depuis le seed : ${seed}`);
+      } catch (e) {
+        console.warn("seed copy failed:", e?.message || e);
+      }
+      break;
+    }
+  }
+}
+
 export const db = new DatabaseSync(DB_PATH);
 
 db.exec("PRAGMA journal_mode = WAL;");

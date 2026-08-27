@@ -1,16 +1,17 @@
 {
   "name": "ai-sales-agent",
   "version": "1.0.0",
-  "description": "Agent de vente IA — chat de qualification B2B (découverte, traitement des objections, capture de leads) avec backend Node.js sans dépendance.",
+  "description": "Agent de vente IA — SaaS multi-tenant (catalogue réel, 0 hallucination, CRM, pilote gratuit).",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "seed": "node scripts/seed-demo.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "license": "MIT"
 }
