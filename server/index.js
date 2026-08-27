@@ -86,16 +86,16 @@ async function serveStatic(res, pathname) {
   const rel = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
   const file = resolve(join(PUBLIC_DIR, normalize(rel)));
   if (file !== PUBLIC_DIR && !file.startsWith(PUBLIC_DIR + "/")) {
-    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(403, baseHeaders({ "Content-Type": "text/plain; charset=utf-8" }));
     return res.end("Interdit");
   }
   try {
     const data = await readFile(file);
-    res.writeHead(200, {
+    res.writeHead(200, baseHeaders({
       "Content-Type": MIME[extname(file)] || "application/octet-stream",
       "Content-Length": data.length,
       "Cache-Control": "no-cache",
-    });
+    }));
     res.end(data);
   } catch {
     throw Object.assign(new Error("introuvable"), { status: 404 });
@@ -104,20 +104,35 @@ async function serveStatic(res, pathname) {
 
 function notFound(res, json) {
   if (json) {
-    res.writeHead(404, { "Content-Type": "application/json; charset=utf-8" });
+    res.writeHead(404, baseHeaders({ "Content-Type": "application/json; charset=utf-8" }));
     return res.end(JSON.stringify({ error: "introuvable" }));
   }
-  res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
-  return res.end(`<!doctype html><html lang="fr"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>404 · AI Sales Agent</title><link rel="stylesheet" href="/style.css"/></head>
 <body class="auth-page"><div class="auth-card"><h1>404</h1><p class="muted">Cette page n'existe pas (ou plus).</p>
-<a class="btn primary block" href="/">Retour à l'accueil</a></div></body></html>`);
+<a class="btn primary block" href="/">Retour à l'accueil</a></div></body></html>`;
+  res.writeHead(404, baseHeaders({ "Content-Type": "text/html; charset=utf-8", "Content-Length": Buffer.byteLength(html) }));
+  return res.end(html);
+}
+
+/** En-têtes communs : preview Arena (iframe) + pas de cache agressif. */
+function baseHeaders(extra = {}) {
+  return {
+    // Autorise l'intégration dans le Live Preview Arena (iframe cross-origin)
+    "Content-Security-Policy": "frame-ancestors *",
+    "X-Content-Type-Options": "nosniff",
+    // Ne PAS envoyer X-Frame-Options: DENY (bloquerait le preview)
+    ...extra,
+  };
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url, "http://localhost");
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const path = url.pathname;
   const json = req.headers["x-requested-with"] === "fetch" || (req.headers["content-type"] || "").includes("application/json");
+  // Les probes du proxy preview utilisent souvent HEAD — on le traite comme GET pour les pages.
+  const method = req.method === "HEAD" ? "GET" : req.method;
+  const isHead = req.method === "HEAD";
 
   try {
     const body = ["POST", "PUT", "DELETE"].includes(req.method) ? await readBody(req) : {};
@@ -138,7 +153,7 @@ const server = createServer(async (req, res) => {
 
     const ctx = {
       req, res, db,
-      method: req.method, path,
+      method, path,
       query: Object.fromEntries(url.searchParams),
       body, json,
       user: auth?.user || null,
@@ -149,17 +164,28 @@ const server = createServer(async (req, res) => {
       secure: isSecureRequest(req),
       sendJSON(status, obj) {
         const out = JSON.stringify(obj);
-        res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Content-Length": Buffer.byteLength(out), "Cache-Control": "no-store" });
-        res.end(out);
+        const headers = baseHeaders({
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Length": Buffer.byteLength(out),
+          "Cache-Control": "no-store",
+        });
+        res.writeHead(status, headers);
+        res.end(isHead ? undefined : out);
       },
       sendHTML(status, html) {
-        res.writeHead(status, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
-        res.end(html);
+        const body = String(html ?? "");
+        const headers = baseHeaders({
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": Buffer.byteLength(body),
+          "Cache-Control": "no-store",
+        });
+        res.writeHead(status, headers);
+        res.end(isHead ? undefined : body);
       },
       redirect(loc) {
         if (json) ctx.sendJSON(200, { redirect: loc });
         else {
-          res.writeHead(302, { Location: loc, "Cache-Control": "no-store" });
+          res.writeHead(302, baseHeaders({ Location: loc, "Cache-Control": "no-store" }));
           res.end();
         }
       },
@@ -187,7 +213,7 @@ const server = createServer(async (req, res) => {
     const handlers = isApi
       ? [handleWebhooks, paymentsRoutes.handleWebhook, handleMockApi, webchatRoutes.handleApi, quotesRoutes.handlePublicApi, billingRoutes.handleApi, publicRoutes.handleApi, crmRoutes.handleApi, aiRoutes.handleApi, smartRoutes.handleApi, automationRoutes.handleApi, channelRoutes.handleApi, inboxRoutes.handleApi, quotesRoutes.handleApi, ordersRoutes.handleApi, paymentsRoutes.handleApi, appRoutes.handleApi, settingsRoutes.handleApi]
       : null;
-    const pages = !isApi && req.method === "GET"
+    const pages = !isApi && method === "GET"
       ? [publicRoutes.handlePage, crmRoutes.handlePage, aiRoutes.handlePage, automationRoutes.handlePage, channelRoutes.handlePage, inboxRoutes.handlePage, webchatRoutes.handlePage, quotesRoutes.handlePage, ordersRoutes.handlePage, billingRoutes.handlePage, appRoutes.handlePage, settingsRoutes.handlePage]
       : null;
 
@@ -207,14 +233,19 @@ const server = createServer(async (req, res) => {
     }
 
     // --- assets statiques ---
-    if (req.method === "GET" || req.method === "HEAD") {
+    if (method === "GET") {
       if (
         path === "/style.css" || path === "/app.js" || path === "/landing.js" ||
         path === "/crm.js" || path === "/ai.js" || path === "/automation.js" ||
-        path.startsWith("/demo/chat")
+        path.startsWith("/demo/chat") || path.startsWith("/images/")
       ) {
-        if (req.method === "HEAD") {
-          res.writeHead(200);
+        if (isHead) {
+          // Répondre 200 avec le bon Content-Type (sans corps) pour les probes
+          const ext = extname(path) || ".html";
+          res.writeHead(200, baseHeaders({
+            "Content-Type": MIME[ext] || "application/octet-stream",
+            "Cache-Control": "no-cache",
+          }));
           return res.end();
         }
         return await serveStatic(res, path);
