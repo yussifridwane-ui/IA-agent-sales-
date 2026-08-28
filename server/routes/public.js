@@ -160,11 +160,32 @@ export async function handleApi(ctx) {
        VALUES (?, ?, ?, 'trial', ?, ?, ?, ?, ?)`
     ).run(uuid(), orgId, trialPlan, now, trialDays, trialEnds, now, now);
 
+    // Agent + règles + clé widget dès l'inscription (parcours commerçant sans friction)
+    const widgetKey = randomBytes(10).toString("hex"); // 20 chars alphanum
+    db.prepare("UPDATE organizations SET widget_key = ? WHERE id = ?").run(widgetKey, orgId);
+    const agentId = uuid();
+    const agentName = cleanText(v.company, 40) || "Assistant commercial";
+    db.prepare(
+      `INSERT INTO agent_settings (id, organization_id, name, description, language, tone, style, human_handoff_enabled, status, welcome_message, fallback_message, business_goal, ai_handling_mode, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'fr', 'friendly', 'equilibre', 1, 'DRAFT', ?, ?, ?, 'AI', ?, ?)`
+    ).run(
+      agentId, orgId, agentName,
+      `Agent commercial de ${v.company}`,
+      `Bonjour ! Je suis l'assistant commercial de ${v.company}. Je peux vous renseigner sur nos produits, prix et stocks. Comment puis-je vous aider ?`,
+      "Je n'ai pas cette information dans le catalogue. Je peux vous mettre en relation avec un conseiller.",
+      "Qualifier les prospects et répondre à partir du catalogue réel",
+      now, now,
+    );
+    db.prepare(
+      `INSERT INTO sales_rules (id, organization_id, max_discount_percent, negotiation_enabled, payment_methods, created_at, updated_at)
+       VALUES (?, ?, 0, 0, 'Espèces, Mobile Money, Carte', ?, ?)`
+    ).run(uuid(), orgId, now, now);
+
     logAudit(db, { organizationId: orgId, userId, action: "CREATE_ORGANIZATION", resourceType: "organization", resourceId: orgId });
     logAudit(db, { organizationId: orgId, userId, action: "LOGIN", resourceType: "session" });
 
     createSession(db, ctx.req, ctx.res, { userId, workspaceId: orgId });
-    if (ctx.json) return ctx.sendJSON(200, { redirect: "/onboarding" });
+    if (ctx.json) return ctx.sendJSON(200, { redirect: "/onboarding", widget_key: widgetKey });
     ctx.res.writeHead(302, { Location: "/onboarding" });
     return ctx.res.end();
   }

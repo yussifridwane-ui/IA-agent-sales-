@@ -26,12 +26,15 @@ export const DB_PATH = resolveDbPath();
 
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
-// Seed démo (TechStore) au premier démarrage serverless
+// Seed démo (TechStore) au premier démarrage serverless / Vercel uniquement.
+// En local, on part d'une DB vide sauf si SEED_ON_BOOT=true.
+const shouldSeed = process.env.SEED_ON_BOOT === "true"
+  || !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 const seedCandidates = [
   resolve(ROOT, "data/seed/demo.db"),
   resolve(ROOT, "data/demo.db"),
 ];
-if (!existsSync(DB_PATH)) {
+if (shouldSeed && !existsSync(DB_PATH)) {
   for (const seed of seedCandidates) {
     if (existsSync(seed)) {
       try {

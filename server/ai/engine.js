@@ -44,11 +44,23 @@ export function getAgentSettings(db, orgId) {
   let a = db.prepare("SELECT * FROM agent_settings WHERE organization_id = ?").get(orgId);
   if (!a) {
     const id = randomUUID();
+    // Bienvenue + fallback anti-hallucination dès la création
+    const welcome = "Bonjour ! Je suis votre assistant commercial. Je réponds uniquement à partir de votre catalogue. Comment puis-je vous aider ?";
+    const fallback = "Je n'ai pas cette information dans le catalogue. Je peux vous mettre en relation avec un conseiller.";
     db.prepare(
-      `INSERT INTO agent_settings (id, organization_id, name, language, tone, style, human_handoff_enabled, status, created_at, updated_at)
-       VALUES (?, ?, 'AI Sales Agent', 'fr', 'professional', 'equilibre', 1, 'DRAFT', ?, ?)`
-    ).run(id, orgId, now(), now());
+      `INSERT INTO agent_settings (id, organization_id, name, language, tone, style, human_handoff_enabled, status, welcome_message, fallback_message, ai_handling_mode, created_at, updated_at)
+       VALUES (?, ?, 'AI Sales Agent', 'fr', 'friendly', 'equilibre', 1, 'DRAFT', ?, ?, 'AI', ?, ?)`
+    ).run(id, orgId, welcome, fallback, now(), now());
     a = db.prepare("SELECT * FROM agent_settings WHERE organization_id = ?").get(orgId);
+  }
+  // Auto-activation soft : si catalogue non vide et agent encore DRAFT → ACTIVE
+  // (le commerçant n'a pas à chercher le bouton « Activer » pour le widget)
+  if (a && a.status === "DRAFT") {
+    const prod = db.prepare("SELECT COUNT(*) AS n FROM products WHERE organization_id = ? AND status = 'ACTIVE'").get(orgId)?.n || 0;
+    if (prod > 0) {
+      db.prepare("UPDATE agent_settings SET status = 'ACTIVE', updated_at = ? WHERE id = ?").run(now(), a.id);
+      a = db.prepare("SELECT * FROM agent_settings WHERE organization_id = ?").get(orgId);
+    }
   }
   return a;
 }

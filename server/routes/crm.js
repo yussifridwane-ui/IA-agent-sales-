@@ -13,6 +13,18 @@ import { emitEvent } from "../automation/events.js";
 import { checkLimit } from "../billing.js";
 import { processEvent, cancelFollowUpsForLead, notifyUser, notifiableMembers, smartAssign } from "../automation/engine.js";
 import { resolveOutcome, predictionReadiness } from "../automation/prediction.js";
+import { getAgentSettings } from "../ai/engine.js";
+
+/** Active l'agent IA dès qu'un 1er produit ACTIVE existe (parcours commerçant). */
+function maybeActivateAgentOnCatalog(db, orgId) {
+  try {
+    const agent = getAgentSettings(db, orgId);
+    if (!agent || agent.status === "ACTIVE") return;
+    const prod = db.prepare("SELECT COUNT(*) AS n FROM products WHERE organization_id = ? AND status = 'ACTIVE'").get(orgId)?.n || 0;
+    if (prod < 1) return;
+    db.prepare("UPDATE agent_settings SET status = 'ACTIVE', updated_at = ? WHERE id = ?").run(nowIso(), agent.id);
+  } catch { /* non bloquant */ }
+}
 
 /** Phase 5 (spec §21) : lead HOT sans assignation → assignation intelligente. */
 function maybeAutoAssignCrm(ctx, leadId) {
@@ -320,6 +332,7 @@ async function apiProducts(ctx) {
       data.currency ?? org.currency, data.stock, data.threshold, data.status, ctx.user.id, now, now);
     insertVariants(ctx, db, id, body.variants, org.id, now);
     insertImages(ctx, db, id, body.images, org.id, now);
+    if (data.status === "ACTIVE") maybeActivateAgentOnCatalog(db, org.id);
     logAudit(db, { organizationId: org.id, userId: ctx.user.id, action: "CREATE_PRODUCT", resourceType: "product", resourceId: id, metadata: { name: data.name, sku: data.sku } });
     return ctx.sendJSON(201, { id, redirect: `/dashboard/products/${id}`, message: "Produit créé." });
   }
@@ -359,6 +372,7 @@ async function apiProducts(ctx) {
         r.stock, 0, r.status, ctx.user.id, now, now);
       imported++;
     }
+    if (imported > 0) maybeActivateAgentOnCatalog(db, org.id);
     logAudit(db, { organizationId: org.id, userId: ctx.user.id, action: "IMPORT_PRODUCTS", resourceType: "product", metadata: { imported, skipped: revalidated.length - imported } });
     return ctx.sendJSON(200, { imported, skipped: revalidated.length - imported, message: `${imported} produit(s) importé(s), ${revalidated.length - imported} ignoré(s).` });
   }
