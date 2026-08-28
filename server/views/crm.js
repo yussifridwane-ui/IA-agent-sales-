@@ -1057,6 +1057,16 @@ export function dashboardPage(ctx, { stats, period, user, org, ai, phase5 }) {
       </div>
     </section>
 
+    ${Number(stats.total_leads) === 0 && Number(stats.open_deals) === 0 ? `
+    <div class="card" style="margin-bottom:16px;padding:16px;border-color:color-mix(in srgb,#4f46e5 30%,transparent);background:color-mix(in srgb,#4f46e5 6%,transparent)">
+      <h3 style="margin:0 0 8px">🚀 Démarrez en 3 minutes</h3>
+      <ol style="margin:0;padding-left:18px;line-height:1.8;color:var(--muted,#64748b)">
+        <li><a href="/dashboard/products">Ajoutez un produit</a> (prix + stock) — l'agent s'active automatiquement</li>
+        <li><a href="/dashboard/agent/playground">Testez l'agent</a> : « Quel est le prix de … ? »</li>
+        <li><a href="/dashboard/channels">Copiez le lien widget</a> pour vos prospects (chat public)</li>
+      </ol>
+    </div>` : ""}
+
     <div class="stat-grid">${cards.map((c) => `<div class="card stat-card">
       <span class="stat-ico plain">${c.ico}</span>
       <div><span class="stat-value">${esc(String(c.value))}</span><span class="stat-label">${c.label}</span></div>

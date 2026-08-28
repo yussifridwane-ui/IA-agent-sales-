@@ -103,7 +103,8 @@ export async function handleApi(ctx) {
   if (!user) return ctx.sendJSON(401, { error: "Connexion requise." });
 
   /* ---------- COMPANY ---------- */
-  if (method === "POST" && path === "/api/settings/company") {
+  // POST (form HTML) + PUT (clients JSON / fetch)
+  if ((method === "POST" || method === "PUT") && path === "/api/settings/company") {
     const { org, member: m, forbidden } = scopedOrg(ctx);
     if (forbidden) return ctx.sendJSON(403, { error: "Accès refusé à cette organisation." });
     if (!can(m.role, "org:update")) return ctx.sendJSON(403, { error: "Permission insuffisante (org:update)." });

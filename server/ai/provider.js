@@ -15,6 +15,26 @@ export const OBJECTIONS = ["PRICE", "QUALITY", "TRUST", "DELIVERY", "PAYMENT", "
 const norm = (s) =>
   String(s || "").toLowerCase().replace(/[''ʼ]/g, "'").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
+/** Article FR + nom produit (évite « Le Robe »). Capitalise l'article en tête de phrase. */
+function frDet(name, { def = true, cap = false } = {}) {
+  const n = String(name || "").trim();
+  if (!n) return def ? (cap ? "Le produit" : "le produit") : (cap ? "Un produit" : "un produit");
+  const first = n.split(/\s+/)[0] || n;
+  const fl = first.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const mascEnds = /^(prix|service|stock|forfait|abonnement|pack|kit|set|ordinateur|telephone|smartphone|casque|pc|laptop|iphone|ipad)$/i;
+  const isFem = !mascEnds.test(fl) && /(e|ion|té|tié|ade|ure|ence|ance|ette|elle|ique)$/i.test(fl)
+    && !/(iste|aire|ege|oge|isme|age|istre)$/i.test(fl);
+  let out;
+  if (def) {
+    if (/^[aeiouyhàâäéèêëïîôùûü]/i.test(n)) out = `l'${n}`;
+    else out = isFem ? `la ${n}` : `le ${n}`;
+  } else {
+    out = isFem ? `une ${n}` : `un ${n}`;
+  }
+  if (cap) out = out.charAt(0).toUpperCase() + out.slice(1);
+  return out;
+}
+
 /* ================= INTENT (local) ================= */
 const INTENT_PATTERNS = [
   ["HUMAN_REQUEST", ["humain", "humaine", "conseiller", "commercial", "quelqu'un", "vraie personne", "parler a un", "parler a une", "votre equipe", "agent humain", "une personne", "un conseiller"]],
@@ -262,10 +282,14 @@ export function generateResponseLocal({ agent, rules, intent, info, session, pro
     case "PRICE_INQUIRY": {
       if (selected) {
         const promo = selected.discount_price != null ? `\n${pick("Une promotion est en cours :", "A promotion is running:")}` : "";
-        return pick(
-          `${open}Le ${selected.name} est affiché à ${fmtMoney(selected.price, currency)}${selected.discount_price != null ? ` et actuellement à ${fmtMoney(selected.discount_price, currency)} en promotion` : ""}.`,
-          `The ${selected.name} is priced at ${fmtMoney(selected.price, currency)}${selected.discount_price != null ? ` and is currently on promotion at ${fmtMoney(selected.discount_price, currency)}` : ""}.`
-        );
+        {
+          const det = frDet(selected.name, { cap: !open });
+          const fem = /^l[a']/i.test(det);
+          return pick(
+            `${open}${det} est affiché${fem ? "e" : ""} à ${fmtMoney(selected.price, currency)}${selected.discount_price != null ? ` et actuellement à ${fmtMoney(selected.discount_price, currency)} en promotion` : ""}.`,
+            `The ${selected.name} is priced at ${fmtMoney(selected.price, currency)}${selected.discount_price != null ? ` and is currently on promotion at ${fmtMoney(selected.discount_price, currency)}` : ""}.`
+          );
+        }
       }
       if (products.length) {
         return pick(
@@ -284,13 +308,13 @@ export function generateResponseLocal({ agent, rules, intent, info, session, pro
         if (selected.type === "SERVICE") return pick(`${open}Le service « ${selected.name} » est disponible.`, "The service is available.");
         if (selected.stock_quantity <= 0) {
           return pick(
-            `${open}Le ${selected.name} est actuellement en rupture de stock. Nous pouvons vous prévenir dès son retour, ou vous proposer une alternative disponible.`,
+            `${open}${frDet(selected.name)} est actuellement en rupture de stock. Nous pouvons vous prévenir dès son retour, ou vous proposer une alternative disponible.`,
             `The ${selected.name} is currently out of stock. We can notify you when it's back, or suggest an available alternative.`
           );
         }
         const low = selected.low_stock_threshold > 0 && selected.stock_quantity <= selected.low_stock_threshold ? " (stock faible)" : "";
         return pick(
-          `${open}Bonne nouvelle : le ${selected.name} est en stock (${selected.stock_quantity} unité(s) disponible(s)${low}).`,
+          `${open}Bonne nouvelle : ${frDet(selected.name)} est en stock (${selected.stock_quantity} unité(s) disponible(s)${low}).`,
           `Good news: the ${selected.name} is in stock (${selected.stock_quantity} unit(s) available${low}).`
         );
       }
@@ -319,7 +343,7 @@ export function generateResponseLocal({ agent, rules, intent, info, session, pro
       const prod = selected || products[0];
       if (prod && prod.type === "PRODUCT" && prod.stock_quantity <= 0) {
         return pick(
-          `${open}Le ${prod.name} est malheureusement en rupture de stock pour le moment. Votre intérêt a été noté et un conseiller vous contactera dès son retour.`,
+          `${open}${frDet(prod.name)} est malheureusement en rupture de stock pour le moment. Votre intérêt a été noté et un conseiller vous contactera dès son retour.`,
           `The ${prod.name} is unfortunately out of stock right now. Your interest has been noted and a consultant will contact you when it's back.`
         );
       }
@@ -334,7 +358,7 @@ export function generateResponseLocal({ agent, rules, intent, info, session, pro
       const maxD = rules?.max_discount_percent || 0;
       if (rules?.negotiation_enabled && maxD > 0 && selected) {
         return pick(
-          `${open}Nous comprenons la négociation. Nous pouvons appliquer une remise jusqu'à ${maxD} % sur le ${selected.name} (soit jusqu'à ${fmtMoney(Math.round((selected.discount_price ?? selected.price) * maxD / 100), currency)} de remise). Un conseiller pourra l'appliquer à la commande.`,
+          `${open}Nous comprenons la négociation. Nous pouvons appliquer une remise jusqu'à ${maxD} % sur ${frDet(selected.name)} (soit jusqu'à ${fmtMoney(Math.round((selected.discount_price ?? selected.price) * maxD / 100), currency)} de remise). Un conseiller pourra l'appliquer à la commande.`,
           `We understand. We can apply a discount up to ${maxD}% on the ${selected.name}. A consultant can apply it at checkout.`
         );
       }

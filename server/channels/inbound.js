@@ -144,10 +144,37 @@ const ACK = {
  * retour : { mode, auto_replied, reply?, suggested_id?, gate_reasons?, send? }
  *   - send : résultat de l'envoi externe (canal ≠ WEBCHAT, mode AI)
  */
+/** Crée un lead anonyme pour le widget (prospect sans compte) si absente. */
+function ensureWebchatLead(db, { orgId, conversation, visitorId, text }) {
+  if (conversation.lead_id) {
+    return db.prepare("SELECT * FROM leads WHERE id = ? AND organization_id = ?").get(conversation.lead_id, orgId) || null;
+  }
+  try {
+    const id = randomUUID();
+    const t = now();
+    const snippet = String(text || "").replace(/\s+/g, " ").trim().slice(0, 80);
+    const name = visitorId ? `Visiteur web ${String(visitorId).slice(-6)}` : "Visiteur webchat";
+    db.prepare(
+      `INSERT INTO leads (id, organization_id, name, source, status, score, interest, notes, created_at, updated_at)
+       VALUES (?, ?, ?, 'WEBSITE', 'NEW', 15, ?, ?, ?, ?)`
+    ).run(id, orgId, name, snippet || null, snippet ? `1er message : ${snippet}` : "Prospect widget webchat", t, t);
+    db.prepare("UPDATE conversations SET lead_id = ?, updated_at = ? WHERE id = ?").run(id, t, conversation.id);
+    conversation.lead_id = id;
+    return db.prepare("SELECT * FROM leads WHERE id = ?").get(id);
+  } catch {
+    return null;
+  }
+}
+
 export async function processInbound(db, { org, conn = null, channel, lead = null, externalContactId = null, visitorId = null, sessionId = null, text, emailMeta = null, userId = null, notify = true }) {
   const orgId = org.id;
   const ch = String(channel || "WEBCHAT").toUpperCase();
   const conversation = findOrCreateConversation(db, { orgId, channel: ch, externalContactId, visitorId, sessionId, leadId: lead?.id || null });
+
+  // Widget : rattacher un lead CRM dès le 1er message (le commerçant voit le prospect)
+  if (ch === "WEBCHAT" && !lead) {
+    lead = ensureWebchatLead(db, { orgId, conversation, visitorId, text });
+  }
 
   // Le message entrant compte comme « non lu » tant qu'un humain (ou l'IA en mode AI) ne l'a pas traité.
   db.prepare("UPDATE conversations SET unread_count = unread_count + 1, last_message_at = ?, updated_at = ?, external_contact_id = COALESCE(external_contact_id, ?), lead_id = COALESCE(lead_id, ?), channel_conversation_id = COALESCE(channel_conversation_id, ?) WHERE id = ?")
