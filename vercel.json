@@ -1,18 +1,25 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "framework": null,
   "buildCommand": null,
+  "installCommand": "npm install --ignore-scripts || true",
+  "framework": null,
   "outputDirectory": null,
-  "installCommand": "echo 'no npm deps'",
   "functions": {
     "api/index.js": {
-      "runtime": "nodejs22.x",
+      "memory": 1024,
       "maxDuration": 60,
-      "includeFiles": "data/seed/**,public/**,server/**,agent/**,api/**"
+      "includeFiles": "{data/seed/**,public/**,server/**,agent/**}"
     }
   },
   "rewrites": [
+    { "source": "/style.css", "destination": "/style.css" },
+    { "source": "/app.js", "destination": "/app.js" },
+    { "source": "/landing.js", "destination": "/landing.js" },
+    { "source": "/crm.js", "destination": "/crm.js" },
+    { "source": "/ai.js", "destination": "/ai.js" },
+    { "source": "/automation.js", "destination": "/automation.js" },
+    { "source": "/demo/(.*)", "destination": "/demo/$1" },
     { "source": "/(.*)", "destination": "/api" }
   ],
   "headers": [

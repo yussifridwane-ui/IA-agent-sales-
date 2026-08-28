@@ -8,10 +8,11 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test",
-    "seed": "node scripts/seed-demo.mjs"
+    "seed": "node scripts/seed-demo.mjs",
+    "vercel-build": "echo 'no build step'"
   },
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "license": "MIT"
 }
